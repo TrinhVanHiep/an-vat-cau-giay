@@ -83,6 +83,18 @@ h1, h2 { margin: 0; line-height: 1.15; text-wrap: balance; }
 .top h1 { font-size: clamp(2rem, 7vw, 2.9rem); font-weight: 850; letter-spacing: -.02em; }
 .sub { margin: 8px 0 0; color: var(--ink-2); max-width: 60ch; }
 
+/* ---------- Hai tab ---------- */
+.tabs { display: flex; gap: 6px; padding: 4px; background: var(--surface-2); border-radius: 999px; width: max-content; max-width: 100%; }
+.tab {
+  appearance: none; border: 0; cursor: pointer;
+  font: inherit; font-weight: 800; font-size: 1rem;
+  padding: 9px 22px; border-radius: 999px;
+  background: transparent; color: var(--ink-2);
+}
+.tab[aria-selected="true"] { background: var(--chili); color: var(--chili-ink); }
+.tab:focus-visible { outline: 3px solid var(--stool); outline-offset: 2px; }
+.panel { display: grid; gap: 20px; }
+
 /* ---------- Biển hiệu quay ngẫu nhiên ---------- */
 .picker { display: grid; gap: 12px; }
 .sign {

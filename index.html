@@ -3,23 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Ăn vặt quanh Cầu Giấy</title>
+  <title>Ăn gì quanh Cầu Giấy</title>
   <link rel="stylesheet" href="styles.css">
   <script src="data.js" defer></script>
+  <script src="data-lunch.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <main class="app">
     <header class="top">
       <p class="eyebrow">ShopeeFood · Hà Nội</p>
-      <h1>Ăn vặt quanh Cầu Giấy</h1>
+      <h1>Ăn gì quanh Cầu Giấy</h1>
       <p class="sub" id="sub">Đang tải danh sách quán…</p>
     </header>
+
+    <div class="tabs" id="tabs" role="tablist" aria-label="Loại bữa">
+      <button type="button" class="tab" id="tab-lunch" role="tab" aria-selected="true" aria-controls="panel">Ăn trưa</button>
+      <button type="button" class="tab" id="tab-snack" role="tab" aria-selected="false" aria-controls="panel" tabindex="-1">Ăn vặt</button>
+    </div>
+
+    <div id="panel" class="panel" role="tabpanel" aria-labelledby="tab-lunch">
 
     <!-- Quay ngẫu nhiên -->
     <section class="picker" aria-labelledby="picker-title">
       <div class="sign">
-        <h2 id="picker-title">Hôm nay ăn gì?</h2>
+        <h2 id="picker-title">Trưa nay ăn gì?</h2>
         <p>Quay ngẫu nhiên một quán trong danh sách đang lọc bên dưới.</p>
         <button id="btn-spin" class="btn-spin" type="button">Quay một quán</button>
       </div>
@@ -32,7 +40,7 @@
     <section class="filters" aria-label="Bộ lọc">
       <label class="search" for="q">
         <span class="sr-only">Tìm theo tên quán hoặc món</span>
-        <input id="q" type="search" placeholder="Tìm tên quán hoặc món: tokbokki, chè, bánh tráng…" autocomplete="off">
+        <input id="q" type="search" placeholder="Tìm tên quán hoặc món" autocomplete="off">
       </label>
 
       <div class="filter-row">
@@ -45,8 +53,8 @@
 
         <fieldset class="seg">
           <legend>Món rẻ nhất</legend>
-          <label><input type="radio" name="price" id="price-20" value="20000"><span>≤ 20k</span></label>
-          <label><input type="radio" name="price" id="price-30" value="30000"><span>≤ 30k</span></label>
+          <label><input type="radio" name="price" id="price-a" value="30000"><span id="price-a-label">≤ 30k</span></label>
+          <label><input type="radio" name="price" id="price-b" value="50000"><span id="price-b-label">≤ 50k</span></label>
           <label><input type="radio" name="price" id="price-all" value="0" checked><span>Mọi giá</span></label>
         </fieldset>
 
@@ -64,6 +72,7 @@
       <div class="filter-row">
         <label class="toggle"><input type="checkbox" id="rating4"><span>Từ 4★ trở lên</span></label>
         <label class="toggle"><input type="checkbox" id="hide-closed"><span>Ẩn quán đang đóng cửa</span></label>
+        <label class="toggle" id="noon-wrap"><input type="checkbox" id="noon"><span>Mở lúc 12:00 hôm nay</span></label>
       </div>
 
       <div class="chips" id="chips" role="group" aria-label="Loại món"></div>
@@ -81,6 +90,8 @@
         <button id="btn-clear-2" class="btn-ghost" type="button">Xoá bộ lọc</button>
       </div>
     </section>
+
+    </div>
 
     <footer class="note" id="note"></footer>
   </main>

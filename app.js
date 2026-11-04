@@ -1,12 +1,11 @@
 (function () {
   'use strict';
 
-  var DATA = window.SNACK_DATA;
-  var SHOPS = DATA.shops;
   var TZ = 'Asia/Ho_Chi_Minh';
+  var NOON = 12 * 60;
 
-  // Loại món suy ra từ tên quán (ShopeeFood không có danh mục ăn vặt chi tiết).
-  var TAGS = [
+  // Loại món suy ra từ tên quán (ShopeeFood không có danh mục món chi tiết).
+  var SNACK_TAGS = [
     { id: 'han', name: 'Tokbokki & đồ Hàn', kw: ['tokbokki', 'topokki', 'tteokbokki', 'kimbap', 'mì cay', 'mỳ cay', 'hàn quốc', 'gà sốt hàn'] },
     { id: 'mi', name: 'Mì trộn', kw: ['mì trộn', 'mỳ trộn', 'indomie'] },
     { id: 'banhtrang', name: 'Bánh tráng', kw: ['bánh tráng'] },
@@ -20,8 +19,37 @@
     { id: 'nuoc', name: 'Kèm trà sữa, nước', kw: ['trà sữa', 'trà', 'nước ép', 'sinh tố', 'nước mía'] }
   ];
 
-  var DEFAULTS = { q: '', maxKm: 3, maxPrice: 0, rating4: false, hideClosed: false, tags: [], sort: 'near' };
-  var state = copy(DEFAULTS);
+  var LUNCH_TAGS = [
+    { id: 'com', name: 'Cơm', kw: ['cơm'] },
+    { id: 'buncha', name: 'Bún chả, bún đậu', kw: ['bún chả', 'bún đậu'] },
+    { id: 'bun', name: 'Bún các loại', kw: ['bún'] },
+    { id: 'pho', name: 'Phở', kw: ['phở'] },
+    { id: 'mien', name: 'Miến, mì, hủ tiếu', kw: ['miến', 'mì vằn thắn', 'mỳ vằn thắn', 'mì xào', 'mỳ xào', 'mì quảng', 'mì vịt', 'mỳ vịt', 'mì gà', 'hủ tiếu', 'bánh đa cua', 'bánh canh'] },
+    { id: 'banhcuon', name: 'Bánh cuốn', kw: ['bánh cuốn'] },
+    { id: 'banhmi', name: 'Bánh mì', kw: ['bánh mì', 'bánh mỳ'] },
+    { id: 'xoi', name: 'Xôi', kw: ['xôi'] },
+    { id: 'chao', name: 'Cháo', kw: ['cháo'] },
+    { id: 'chay', name: 'Đồ chay', kw: ['chay'] }
+  ];
+
+  var MODES = {
+    lunch: {
+      key: 'lunch', hash: 'an-trua', noun: 'quán ăn trưa', data: window.LUNCH_DATA, tags: LUNCH_TAGS,
+      prices: [30000, 50000], noonFilter: true, sign: 'Trưa nay ăn gì?',
+      placeholder: 'Tìm tên quán hoặc món: cơm rang, bún chả, phở…'
+    },
+    snack: {
+      key: 'snack', hash: 'an-vat', noun: 'quán ăn vặt', data: window.SNACK_DATA, tags: SNACK_TAGS,
+      prices: [20000, 30000], noonFilter: false, sign: 'Hôm nay ăn gì?',
+      placeholder: 'Tìm tên quán hoặc món: tokbokki, chè, bánh tráng…'
+    }
+  };
+
+  var DEFAULTS = { q: '', maxKm: 3, maxPrice: 0, rating4: false, hideClosed: false, noon: false, tags: [], sort: 'near' };
+  var states = { lunch: copy(DEFAULTS), snack: copy(DEFAULTS) };
+  var mode = MODES.lunch;
+  var state = states.lunch;
+  var SHOPS = [];
   var lastPickId = null;
   var spinTimer = null;
   var highlightId = null;
@@ -45,12 +73,15 @@
     return norm(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
   }
 
-  SHOPS.forEach(function (s) {
-    var n = norm(s.n);
-    s.tags = TAGS.filter(function (t) {
-      return t.kw.some(function (k) { return n.indexOf(' ' + k + ' ') !== -1; });
-    }).map(function (t) { return t.id; });
-    s.search = fold(s.n + ' ' + s.a);
+  Object.keys(MODES).forEach(function (k) {
+    var m = MODES[k];
+    m.data.shops.forEach(function (s) {
+      var n = norm(s.n);
+      s.tags = m.tags.filter(function (t) {
+        return t.kw.some(function (w) { return n.indexOf(' ' + w + ' ') !== -1; });
+      }).map(function (t) { return t.id; });
+      s.search = fold(s.n + ' ' + s.a);
+    });
   });
 
   /* ---------- Định dạng ---------- */
@@ -97,17 +128,18 @@
 
   function isAllDay(r) { return toMin(r[0]) === 0 && toMin(r[1]) >= 23 * 60 + 59; }
 
-  // s.h: giờ theo từng ngày [[ngày, mở, đóng], …] từ trang quán; s.o / s.c: giờ ngày lấy dữ liệu, dùng khi không có s.h.
+  // Khung giờ hôm nay: s.h là giờ theo từng ngày [[ngày, mở, đóng], …]; s.o / s.c là giờ ngày lấy dữ liệu, dùng khi không có s.h.
+  // Trả về null khi không rõ giờ, [] khi hôm nay nghỉ.
+  function todayRanges(s, day) {
+    if (s.h && s.h.length) return s.h.filter(function (r) { return r[0] === day; }).map(function (r) { return [r[1], r[2]]; });
+    if (s.o && s.c) return [[s.o, s.c]];
+    return null;
+  }
+
   function status(s, now) {
-    var ranges;
-    if (s.h && s.h.length) {
-      ranges = s.h.filter(function (r) { return r[0] === now.day; }).map(function (r) { return [r[1], r[2]]; });
-      if (!ranges.length) return { key: 'closed', text: 'Hôm nay nghỉ' };
-    } else if (s.o && s.c) {
-      ranges = [[s.o, s.c]];
-    } else {
-      return { key: 'unknown', text: 'Không rõ giờ' };
-    }
+    var ranges = todayRanges(s, now.day);
+    if (ranges === null) return { key: 'unknown', text: 'Không rõ giờ' };
+    if (!ranges.length) return { key: 'closed', text: 'Hôm nay nghỉ' };
     if (ranges.some(isAllDay)) return { key: 'open', text: 'Mở cả ngày' };
     var open = ranges.filter(function (r) { return inRange(now.min, r[0], r[1]); })[0];
     if (open) return { key: 'open', text: 'Đang mở · đến ' + open[1] };
@@ -116,6 +148,11 @@
     return later
       ? { key: 'closed', text: 'Đang đóng · mở lúc ' + later[0] }
       : { key: 'closed', text: 'Đã đóng cửa hôm nay' };
+  }
+
+  function openAtNoon(s, day) {
+    var ranges = todayRanges(s, day);
+    return !!ranges && ranges.some(function (r) { return inRange(NOON, r[0], r[1]); });
   }
 
   /* ---------- Lọc và sắp xếp ---------- */
@@ -129,6 +166,7 @@
       if (state.maxPrice && !(s.min && s.min <= state.maxPrice)) return false;
       if (state.rating4 && !(s.r >= 4)) return false;
       if (state.hideClosed && status(s, now).key === 'closed') return false;
+      if (mode.noonFilter && state.noon && !openAtNoon(s, now.day)) return false;
       if (state.tags.length && !state.tags.some(function (t) { return s.tags.indexOf(t) !== -1; })) return false;
       if (q && s.search.indexOf(q) === -1) return false;
       return true;
@@ -158,7 +196,7 @@
   function tagsHtml(s) {
     if (!s.tags.length) return '';
     return '<div class="tags">' + s.tags.map(function (id) {
-      var t = TAGS.filter(function (x) { return x.id === id; })[0];
+      var t = mode.tags.filter(function (x) { return x.id === id; })[0];
       return '<span class="tag">' + esc(t.name) + '</span>';
     }).join('') + '</div>';
   }
@@ -170,7 +208,7 @@
   function renderList() {
     var now = nowVN();
     var list = filtered();
-    $('count').textContent = 'Đang hiện ' + list.length + ' / ' + SHOPS.length + ' quán';
+    $('count').textContent = 'Đang hiện ' + list.length + ' / ' + SHOPS.length + ' ' + mode.noun;
     $('empty').hidden = list.length > 0;
     $('list').innerHTML = list.map(function (s) {
       return '<li class="shop" id="shop-' + s.id + '">' +
@@ -191,7 +229,7 @@
   }
 
   function renderChips() {
-    $('chips').innerHTML = TAGS.map(function (t) {
+    $('chips').innerHTML = mode.tags.map(function (t) {
       return '<button type="button" class="chip" data-tag="' + t.id + '" aria-pressed="false">' + esc(t.name) + '<span class="n"></span></button>';
     }).join('');
   }
@@ -209,10 +247,60 @@
   function syncControls() {
     $('q').value = state.q;
     $('km-' + state.maxKm).checked = true;
-    $('price-' + (state.maxPrice ? state.maxPrice / 1000 : 'all')).checked = true;
+    $('price-a').checked = state.maxPrice === mode.prices[0];
+    $('price-b').checked = state.maxPrice === mode.prices[1];
+    $('price-all').checked = !state.maxPrice;
     $('rating4').checked = state.rating4;
     $('hide-closed').checked = state.hideClosed;
+    $('noon').checked = state.noon;
     $('sort').value = state.sort;
+  }
+
+  /* ---------- Hai tab ---------- */
+  function renderHeader() {
+    var d = mode.data;
+    var near1 = SHOPS.filter(function (s) { return s.km <= 1; }).length;
+    $('sub').textContent = SHOPS.length + ' ' + mode.noun + ' trên ShopeeFood trong bán kính ' + d.radiusKm +
+      ' km quanh ' + d.center.name + ' (' + near1 + ' quán trong 1 km). Dữ liệu lấy ngày ' + dateText(d.collectedAt) + '.';
+    $('picker-title').textContent = mode.sign;
+    $('q').placeholder = mode.placeholder;
+    $('price-a-label').textContent = '≤ ' + priceK(mode.prices[0]);
+    $('price-b-label').textContent = '≤ ' + priceK(mode.prices[1]);
+    $('price-a').value = mode.prices[0];
+    $('price-b').value = mode.prices[1];
+    $('noon-wrap').hidden = !mode.noonFilter;
+    $('note').innerHTML =
+      '<p>Nguồn: ShopeeFood (shopeefood.vn). Quán ăn trưa lấy ngày ' + dateText(MODES.lunch.data.collectedAt) +
+        ', quán ăn vặt lấy ngày ' + dateText(MODES.snack.data.collectedAt) + '. Trang này không đặt món được; bấm "Mở trên ShopeeFood" rồi đặt trong app Shopee.</p>' +
+      '<p>Khoảng cách là đường chim bay từ ' + esc(d.center.name) + ' tới tọa độ quán trên ShopeeFood. Giá là khoảng giá quán ghi trên ShopeeFood; giá món, giờ mở cửa và khuyến mãi có thể đã thay đổi. Loại món được đoán từ tên quán, nên một quán có thể nằm ở cả hai tab.</p>';
+    ['lunch', 'snack'].forEach(function (k) {
+      var tab = $('tab-' + k);
+      var on = k === mode.key;
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.tabIndex = on ? 0 : -1;
+    });
+    $('panel').setAttribute('aria-labelledby', 'tab-' + mode.key);
+  }
+
+  function setMode(key, fromHash) {
+    if (!MODES[key]) key = 'lunch';
+    mode = MODES[key];
+    state = states[key];
+    SHOPS = mode.data.shops;
+    lastPickId = null;
+    highlightId = null;
+    clearInterval(spinTimer);
+    $('pick').classList.remove('spinning');
+    $('pick').innerHTML = '<p class="pick-hint">Chưa quay. Chỉnh bộ lọc nếu muốn, rồi bấm <strong>Quay một quán</strong>.</p>';
+    renderHeader();
+    renderChips();
+    syncControls();
+    renderList();
+    if (!fromHash && location.hash !== '#' + mode.hash) history.replaceState(null, '', '#' + mode.hash);
+  }
+
+  function modeFromHash() {
+    return location.hash === '#' + MODES.snack.hash ? 'snack' : 'lunch';
   }
 
   /* ---------- Quay ngẫu nhiên ---------- */
@@ -224,7 +312,7 @@
       return;
     }
     box.innerHTML =
-      '<p class="pick-label">Hôm nay ăn ở</p>' +
+      '<p class="pick-label">' + (mode.key === 'lunch' ? 'Trưa nay ăn ở' : 'Hôm nay ăn ở') + '</p>' +
       '<p class="pick-name">' + esc(s.n) + '</p>' +
       '<p class="addr">' + esc(s.a) + ' · ' + kmFmt.format(s.km) + ' km</p>' +
       metaHtml(s, nowVN()) +
@@ -296,6 +384,7 @@
     });
     $('rating4').addEventListener('change', function (e) { state.rating4 = e.target.checked; renderList(); });
     $('hide-closed').addEventListener('change', function (e) { state.hideClosed = e.target.checked; renderList(); });
+    $('noon').addEventListener('change', function (e) { state.noon = e.target.checked; renderList(); });
     $('sort').addEventListener('change', function (e) { state.sort = e.target.value; renderList(); });
 
     $('chips').addEventListener('click', function (e) {
@@ -307,7 +396,11 @@
       renderList();
     });
 
-    function clearAll() { state = copy(DEFAULTS); syncControls(); renderList(); }
+    function clearAll() {
+      state = states[mode.key] = copy(DEFAULTS);
+      syncControls();
+      renderList();
+    }
     $('btn-clear').addEventListener('click', clearAll);
     $('btn-clear-2').addEventListener('click', clearAll);
 
@@ -316,20 +409,28 @@
       if (e.target.id === 'btn-again') spin();
       if (e.target.id === 'btn-goto') gotoShop(e.target.getAttribute('data-id'));
     });
+
+    ['lunch', 'snack'].forEach(function (k) {
+      $('tab-' + k).addEventListener('click', function () { if (mode.key !== k) setMode(k); });
+    });
+    // Mũi tên trái/phải chuyển tab, theo mẫu tablist.
+    $('tabs').addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      var next = mode.key === 'lunch' ? 'snack' : 'lunch';
+      setMode(next);
+      $('tab-' + next).focus();
+      e.preventDefault();
+    });
+    window.addEventListener('hashchange', function () {
+      var k = modeFromHash();
+      if (k !== mode.key) setMode(k, true);
+    });
   }
 
   /* ---------- Khởi động ---------- */
   function init() {
-    var near1 = SHOPS.filter(function (s) { return s.km <= 1; }).length;
-    $('sub').textContent = SHOPS.length + ' quán ăn vặt trên ShopeeFood trong bán kính ' + DATA.radiusKm +
-      ' km quanh ' + DATA.center.name + ' (' + near1 + ' quán trong 1 km). Dữ liệu lấy ngày ' + dateText(DATA.collectedAt) + '.';
-    $('note').innerHTML =
-      '<p>Nguồn: ShopeeFood (shopeefood.vn), lấy ngày ' + dateText(DATA.collectedAt) + '. Trang này không đặt món được; bấm "Mở trên ShopeeFood" rồi đặt trong app Shopee.</p>' +
-      '<p>Khoảng cách là đường chim bay từ ' + esc(DATA.center.name) + ' tới tọa độ quán trên ShopeeFood. Giá là khoảng giá quán ghi trên ShopeeFood; giá món, giờ mở cửa và khuyến mãi có thể đã thay đổi. Loại món được đoán từ tên quán.</p>';
-    renderChips();
     bind();
-    syncControls();
-    renderList();
+    setMode(modeFromHash(), true);
     // Cập nhật trạng thái mở/đóng theo phút; bỏ qua khi đang dùng bàn phím trong danh sách để không mất focus.
     setInterval(function () { if (!$('list').contains(document.activeElement)) renderList(); }, 60 * 1000);
   }
